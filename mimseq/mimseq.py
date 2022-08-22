@@ -27,6 +27,7 @@ from collections import defaultdict
 
 log = logging.getLogger(__name__)
 
+## 目的：将输入参数转化为[0.0,1.0]之间的浮点数Float，用于cluster_id和cov_diff参数
 def restrictedFloat(x):
 ## Method for restricting cluster_id and cov_diff argument to float between 0 and 1
 	try:
@@ -37,6 +38,7 @@ def restrictedFloat(x):
 	except ValueError:
 		raise argparse.ArgumentTypeError('{} not a real number'.format(x))
 
+## 目的：将输入参数转化为>=0.0的浮点数Float，用于min-cov参数
 def restrictedFloat2(x):
 ## Method for restricting min-cov argument to float between 0 and 1, or int greater than 1
 
@@ -48,11 +50,13 @@ def restrictedFloat2(x):
 	except ValueError:
 		raise argparse.ArgumentTypeError('{} not a real number'.format(x))
 
+## 主函数
 def mimseq(trnas, trnaout, name, species, out, cluster, cluster_id, cov_diff, posttrans, control_cond, threads, max_multi, snp_tolerance, \
 	keep_temp, cca, double_cca, min_cov, mismatches, remap, remap_mismatches, misinc_thresh, mito_trnas, pretrnas, local_mod, p_adj, sample_data):
 	
 # Main wrapper
 	# Integrity check for output folder argument...
+	## 在磁盘中新建输出文件夹out
 	try:
 		os.mkdir(out)
 	except FileExistsError:
@@ -64,8 +68,9 @@ def mimseq(trnas, trnaout, name, species, out, cluster, cluster_id, cov_diff, po
 	###########
 	# Logging #
 	###########
-
+	## 记录当前时间
 	now = datetime.datetime.now()
+	## logging模块包配置日志格式，保存为.log文件
 	logging.basicConfig(
 		format="%(asctime)s [%(levelname)-5.5s] %(message)s",
 		level=logging.INFO,
@@ -77,6 +82,8 @@ def mimseq(trnas, trnaout, name, species, out, cluster, cluster_id, cov_diff, po
 	log.info(" ".join(sys.argv))
 
 	# Sample data integrity check...
+	## 读取并检查sample_data文件是否包含重复内容：
+	## 每行数据，以空格隔开取第一个数，在以/隔开取最后一个数，将该数作为唯一标识进行检查
 	with open(sample_data, "r") as samples:
 		sample_list = []
 		for line in samples:
@@ -92,22 +99,29 @@ def mimseq(trnas, trnaout, name, species, out, cluster, cluster_id, cov_diff, po
 	# main #
 	########
 
+	## 第1轮匹配
 	map_round = 1 #first round of mapping
 
 	# Parse tRNA and modifications, generate SNP index
+	## 解析tRNA和修饰，用于生成SNP下标
+	## 设置修饰文件路径： 根目录/modifications
 	modifications = os.path.dirname(os.path.realpath(__file__))
 	modifications += "/modifications"
+	## 根据修饰生成SNP下标
 	coverage_bed, snp_tolerance, mismatch_dict, insert_dict, del_dict, mod_lists, Inosine_lists, Inosine_clusters, tRNA_dict, cluster_dict, cluster_perPos_mismatchMembers \
 	= modsToSNPIndex(trnas, trnaout, mito_trnas, modifications, name, out, double_cca, threads, snp_tolerance, cluster, cluster_id, posttrans, pretrnas, local_mod)
 	structureParser()
-	# Generate GSNAP indices
+	# Generate GSNAP
+	## 生成GSNAP指数
 	genome_index_path, genome_index_name, snp_index_path, snp_index_name = generateGSNAPIndices(species, name, out, map_round, snp_tolerance, cluster)
 
 	# Align
+	## 对齐
 	bams_list, coverageData = mainAlign(sample_data, name, genome_index_path, genome_index_name, \
 		snp_index_path, snp_index_name, out, threads, snp_tolerance, keep_temp, mismatches, map_round, remap)
 
 	# define unique mismatches/insertions to assign reads to unique tRNA sequences
+	## 建立缺省字典，用于读取不同的tRNA序列
 	unique_isodecoderMMs = defaultdict(dict)
 	unique_isodecoderMMs_new = defaultdict(dict)
 	splitBool = defaultdict(set)
@@ -116,18 +130,22 @@ def mimseq(trnas, trnaout, name, species, out, cluster, cluster_id, cov_diff, po
 	notSplit_cov_posInfo = defaultdict(set)
 	notSplit_mods_posInfo = defaultdict(set)
 	if cluster and cluster_id != 1:
+		## 对于第2个及之后的聚类器cluster：
 		cluster_dict2 = copy.deepcopy(cluster_dict) # copy so splitIsodecoder does not edit main cluster_dict
 		unique_isodecoderMMs, splitBool, notSplit_mods_posInfo = splitIsodecoder(cluster_perPos_mismatchMembers, insert_dict, del_dict, tRNA_dict, cluster_dict2, out, name)
 		splitBool_new, unique_isodecoderMMs_new, notSplit_cov_posInfo = unsplitClustersCov(coverageData, coverage_bed, unique_isodecoderMMs, splitBool, threads, map_round, cov_diff)
 		isodecoder_sizes, unsplitCluster_lookup = getDeconvSizes(splitBool_new, tRNA_dict, cluster_dict, unique_isodecoderMMs_new)
 		writeDeconvTranscripts(out, name, tRNA_dict, isodecoder_sizes, cluster)
 	elif cluster and cluster_id == 1:
+		## 对于第1个聚类器cluster：
 		isodecoder_sizes = {iso:len(members) for iso, members in cluster_dict.items()}
 		writeIsodecoderTranscripts(out, name, cluster_dict, tRNA_dict)
 	elif not cluster:
+		## 无效的聚类器cluster：
 		isodecoder_sizes = getIsodecoderSizes(out, name, tRNA_dict)
 
 	# if remap and snp_tolerance are enabled, skip further analyses, find new mods, and redo alignment and coverage
+	## 若使能了重新匹配和容忍SNP的功能，当有不匹配存在时，跳过后续分析过程，寻找新的修饰，并重新去做对齐和覆盖（开始第2轮匹配）
 	if remap and (snp_tolerance or not mismatches == 0.0):
 		new_mods, new_Inosines, filtered_cov, filter_warning, unsplitCluster_lookup,readRef_unsplit_newNames = generateModsTable(coverageData, out, name, threads, min_cov, mismatch_dict, insert_dict, del_dict, cluster_dict, cca, remap, misinc_thresh, mod_lists, Inosine_lists, tRNA_dict, Inosine_clusters, unique_isodecoderMMs_new, splitBool_new, isodecoder_sizes, unsplitCluster_lookup, cluster)
 		Inosine_clusters, snp_tolerance, newtRNA_dict, new_mod_lists, new_inosine_lists = newModsParser(out, name, new_mods, new_Inosines, mod_lists, Inosine_lists, tRNA_dict, cluster, remap, snp_tolerance)
@@ -142,12 +160,14 @@ def mimseq(trnas, trnaout, name, species, out, cluster, cluster_id, cov_diff, po
 	# redo checks for unsplit isodecoders based on coverage 
 	# use original splitBool and unique_isodecoderMMs in case coverage changes in 2nd alignment round, regenerate splitBool_new and unique_isodecoderMMs_new
 	# rewrite deconv transcripts
+	## 第2轮匹配并且第2个及之后的聚类器：根据覆盖重做unsplit isodecoders的检查
 	if map_round == 2 and cluster and cluster_id != 1:
 		splitBool_new, unique_isodecoderMMs_new, notSplit_cov_posInfo = unsplitClustersCov(coverageData, coverage_bed, unique_isodecoderMMs, splitBool, threads, map_round, cov_diff)
 		isodecoder_sizes, unsplitCluster_lookup = getDeconvSizes(splitBool_new, tRNA_dict, cluster_dict, unique_isodecoderMMs_new)
 		writeDeconvTranscripts(out, name, tRNA_dict, isodecoder_sizes, cluster)
 
 	# Misincorporation analysis
+	## 错参误入分析
 	filter_warning = False
 	filtered_cov = list()
 	if snp_tolerance or not mismatches == 0.0:
@@ -163,12 +183,14 @@ def mimseq(trnas, trnaout, name, species, out, cluster, cluster_id, cov_diff, po
 	writeSplitInfo(out, name, splitBool_new, notSplit_mods_posInfo, notSplit_cov_posInfo)
 
 	# Output modification context file for plotting
+	## 输出修饰上下文文件，用于作图
 	mod_sites, cons_pos_list = modContext(out, unsplitCluster_lookup)
 
 	script_path = os.path.dirname(os.path.realpath(__file__))
 	
 	if snp_tolerance or not mismatches == 0.0:
-					# plot mods and stops, catch exception with command call and print log error if many clusters are filtered (known to cause issues with R code handling mods table)
+		# plot mods and stops, catch exception with command call and print log error if many clusters are filtered (known to cause issues with R code handling mods table)
+		## 边停边画，随时抓取命令行调用的异常，若大量聚类器被过滤掉则打印告警信息（R语言在处理修饰列表时出错是已知问题）
 		log.info("Plotting modification and RT stop data...")
 		try:
 			modplot_cmd = ["Rscript", script_path + "/modPlot.R", out, str(mod_sites), str(cons_pos_list), str(misinc_thresh), str(mito_trnas), control_cond]
@@ -189,6 +211,7 @@ def mimseq(trnas, trnaout, name, species, out, cluster, cluster_id, cov_diff, po
 			plotCCA(out, double_cca)
 
 	# Coverage and plots
+	## 获取覆盖并作图
 	sorted_aa = getCoverage(coverageData, out, control_cond, filtered_cov, unsplitCluster_lookup)
 	plotCoverage(out, mito_trnas, sorted_aa)
 

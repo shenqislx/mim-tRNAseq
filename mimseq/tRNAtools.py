@@ -30,10 +30,10 @@ def dd_list():
 
 def tRNAparser (gtRNAdb, tRNAscan_out, mitotRNAs, modifications_table, posttrans_mod_off, double_cca, pretrnas, local_mod):
 # tRNA sequence files parser and dictionary building
-
-	# Generate modification reference table
+	# Generate modification reference table 生成修饰参考表
+	## 解析输入的修饰表文件：name, abbr, ref, mod，并存入字典modifications中，其中未知的修饰称为N。
 	modifications = modificationParser(modifications_table)
-	temp_name = gtRNAdb.split("/")[-1]
+	temp_name = gtRNAdb.split("/")[-1]		## gtRNAdb: 主函数输入的tRNA序列（.fa）文件
                 
 	log.info("\n+" + ("-" * (len(temp_name)+24)) + "+\
 		\n| Starting analysis for {} |\
@@ -238,14 +238,15 @@ def getModomics(local_mod):
 
 def modsToSNPIndex(gtRNAdb, tRNAscan_out, mitotRNAs, modifications_table, experiment_name, out_dir, double_cca, threads, snp_tolerance = False, cluster = False, cluster_id = 0.95, posttrans_mod_off = False, pretrnas = False, local_mod = False):
 # Builds SNP index needed for GSNAP based on modificaiton data for each tRNA and clusters tRNAs
-
+	## 基于每个tRNA和簇tRMA的修饰数据，建立GSNAP所需的SNP下标
 	nomatch_count = 0
 	match_count = 0
 	total_snps = 0
-	total_inosines = 0
+	total_inosines = 0 ##肌酐
 	snp_records = list()
 	seq_records = defaultdict()
-	anticodon_list = list()
+	anticodon_list = list()  ##反密码子
+	## 建立tRNA bed文件路径
 	tRNAbed = open(out_dir + experiment_name + "_maturetRNA.bed","w")
 	# generate modomics_dict and tRNA_dict
 	tRNA_dict, modomics_dict, species = tRNAparser(gtRNAdb, tRNAscan_out, mitotRNAs, modifications_table, posttrans_mod_off, double_cca, pretrnas, local_mod)
